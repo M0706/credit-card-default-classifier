@@ -12,9 +12,10 @@ can re-derive any of them yourself.
 | 1 | [01_theory.md](01_theory.md) | What *is* a classifier, and how do the five algorithms actually work? |
 | 2 | [02_metrics.md](02_metrics.md) | What do accuracy, AUC, precision, recall, F1 and MCC mean — and why is accuracy nearly useless here? |
 | 3 | [03_data_pipeline.md](03_data_pipeline.md) | Raw `.xls` → cleaned CSV → scaled training matrix. Every decision and its justification. |
-| 4 | [04_code_walkthrough.md](04_code_walkthrough.md) | Line-by-line tour of `prepare_data.py`, `train_models.py` and `app.py`. |
+| 4 | [04_code_walkthrough.md](04_code_walkthrough.md) | Line-by-line tour of every script, including the `models/` package. |
 | 5 | [05_why_these_results.md](05_why_these_results.md) | Why each model produced *its* specific numbers, read off the trained artefacts. |
-| 6 | [06_viva_prep.md](06_viva_prep.md) | 30 questions you should be able to answer about this submission. |
+| 6 | [06_viva_prep.md](06_viva_prep.md) | 41 questions you should be able to answer about this submission. |
+| 7 | [07_implementations.md](07_implementations.md) | The five algorithms written from scratch: the maths in each file, the bugs it is easy to make, and the proof they match scikit-learn. |
 
 ## The 60-second version
 
@@ -41,6 +42,8 @@ assignment asks for MCC.
 ```bash
 python prepare_data.py     # .xls -> data/credit_default.csv (29,965 rows)
 python train_models.py     # trains 5 models -> model/, reports/, test_data.csv
+python validate_models.py  # from-scratch vs scikit-learn -> reports/validation.json
+python analysis.py         # bootstrap intervals + threshold sweep
 streamlit run app.py       # interactive evaluation
 ```
 

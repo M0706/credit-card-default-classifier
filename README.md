@@ -2,6 +2,8 @@
 
 An end-to-end machine learning project that predicts whether a credit card client will default on their next month's payment. Five classification algorithms are trained on the same dataset, compared across six evaluation metrics, and served through an interactive Streamlit application.
 
+**All five algorithms are implemented from scratch** in the [`models/`](models/) package — one file per algorithm, each inheriting from a common `Model` base class. scikit-learn is used only for the train/test split, the scaler and the metric functions, and a validation harness checks each hand-written implementation against scikit-learn's reference version on identical data.
+
 **Machine Learning — Assignment 2 (M.Tech AIML, BITS Pilani WILP)**
 
 ---
@@ -65,30 +67,49 @@ Originally published by Yeh & Lien (2009). Data from 30,000 clients of a Taiwane
 
 ## d. Models used and results
 
-All five models were trained on the same 23 features and evaluated on the same 5,993 held-out rows. `Decision Tree` depth and `KNN` `k` were chosen on a validation split carved out of the training data, and the selected configuration was then **refit on the full 23,972-row training set** before scoring; all other hyperparameters are library defaults on standardised features.
+All five models were trained on the same 23 features and evaluated on the same 5,993 held-out rows. `Decision Tree` depth and `KNN` `k` were chosen on a validation split carved out of the training data, and the selected configuration was then **refit on the full 23,972-row training set** before scoring.
+
+| Model | File | Training method |
+|---|---|---|
+| Logistic Regression | [`models/logistic.py`](models/logistic.py) | L2-penalised log loss minimised by Newton's method (IRLS) — 7 iterations |
+| Decision Tree | [`models/tree.py`](models/tree.py) | CART: greedy splits on Gini impurity, quantile candidate thresholds |
+| K-Nearest Neighbours | [`models/knn.py`](models/knn.py) | Memorises the training set; distance-weighted vote over 15 neighbours |
+| Naive Bayes | [`models/naive_bayes.py`](models/naive_bayes.py) | Gaussian likelihoods with the conditional-independence assumption |
+| Support Vector Machine | [`models/svm.py`](models/svm.py) | RBF kernel, soft margin, solved by simplified SMO (Platt) |
+
+`validate_models.py` fits each hand-written model and scikit-learn's version on the identical split and compares them. The largest AUC difference across all five is **0.0035** (the decision tree, where quantile thresholds replace sklearn's exhaustive search).
+
+All five share one interface, defined by `models/base.py`, so training and serving code never branch on the algorithm:
+
+```python
+model.fit(X, y)              # learn
+model.predict_proba(X)       # -> (n_samples, 2) probabilities
+model.predict(X)             # -> 0/1 labels at a 0.5 cut-off
+model.save(path)             # joblib, same artefact the app loads
+```
 
 ### Comparison table
 
 | ML Model Name | Accuracy | AUC | Precision | Recall | F1 | MCC |
 |---|---|---|---|---|---|---|
-| Logistic Regression | 0.8133 | 0.7160 | 0.7275 | 0.2496 | 0.3717 | 0.3496 |
-| Decision Tree | **0.8163** | **0.7341** | 0.6490 | 0.3695 | 0.4709 | **0.3912** |
-| KNN | 0.8073 | 0.7327 | 0.6179 | 0.3379 | 0.4369 | 0.3545 |
+| Logistic Regression | 0.8133 | 0.7160 | **0.7285** | 0.2489 | 0.3710 | 0.3494 |
+| Decision Tree | **0.8195** | **0.7472** | 0.6658 | 0.3695 | 0.4753 | **0.4007** |
+| KNN | 0.8066 | 0.7333 | 0.6152 | 0.3363 | 0.4349 | 0.3520 |
 | Naive Bayes | 0.6915 | 0.7283 | 0.3864 | **0.6704** | **0.4902** | 0.3140 |
-| Support Vector Machine | 0.8161 | 0.7173 | 0.6713 | 0.3311 | 0.4434 | 0.3794 |
+| Support Vector Machine | 0.8133 | 0.7105 | 0.6448 | 0.3477 | 0.4517 | 0.3755 |
 
-**Statistical caveat.** These are point estimates. Bootstrap 95% intervals (300 resamples of the test set) overlap across all five models on AUC, and overlap for the Decision Tree versus SVM and KNN on MCC — so the only difference that is statistically defensible is the Decision Tree's MCC advantage over Naive Bayes (0.360–0.418 vs 0.287–0.338). Full intervals are in [`docs/05_why_these_results.md`](docs/05_why_these_results.md).
+**Statistical caveat.** These are point estimates. Bootstrap 95% intervals (300 resamples of the test set) overlap for the Decision Tree against KNN, Naive Bayes and SVM on MCC, so most pairwise gaps are not statistically defensible. Only two claims survive the intervals: the Decision Tree's MCC advantage over Naive Bayes (**0.364–0.428** vs 0.288–0.338) and its AUC advantage over the SVM (**0.733–0.763** vs 0.695–0.727). Full intervals are in [`docs/05_why_these_results.md`](docs/05_why_these_results.md).
 
 ### Observations on model performance
 
 | ML Model Name | Observation about model performance |
 |---|---|
-| Logistic Regression | Highest precision (0.7275) but the lowest recall of the four linear-family models (0.2496) — it flags a default only when very confident, so it misses roughly 3 out of every 4 actual defaulters. Because it optimises log-loss under a 78/22 imbalance, it is pushed toward the majority class. Good AUC (0.7160) relative to its poor recall shows its *ranking* is reasonable even though the 0.5 threshold is far too conservative. It also cannot express the interaction effects that matter here — a high bill coupled with a rising delinquency count is far riskier than either alone. |
-| Decision Tree | Best on accuracy (0.8163), AUC (0.7341) **and** MCC (0.3912) — the only model to lead on all three. Tuning selected a shallow tree (`max_depth=4`, `min_samples_leaf=50`, 15 leaves): the fully-grown tree scored a *lower* validation F1 (0.4290 vs 0.4628), confirming that unrestricted depth memorises noise. Only a handful of axis-aligned splits are needed because one variable dominates — `PAY_0` (most recent repayment status) accounts for **73.5%** of the tree's impurity reduction, with `PAY_2` adding 14.4%. Fully interpretable: the decision path can be shown to a loan officer and defended. |
-| KNN | Competitive AUC (0.7327) but the weakest operational profile: the saved model is 3.5 MB and must compare every new client against all 23,972 training points, so latency grows linearly with the dataset. With 23 features it also suffers from the curse of dimensionality — distances concentrate and neighbours stop being meaningfully "similar". Distance weighting with `k=15` was selected over larger neighbourhoods, which increasingly blurred the minority class. Notably, refitting on the full training set slightly *lowered* its MCC (0.3611 → 0.3545), because a larger reference set changes which 15 neighbours vote near the decision boundary. |
-| Naive Bayes | The mirror image of Logistic Regression: highest recall (0.6704) and highest F1 (0.4902) but lowest accuracy (0.6915), precision (0.3864) and MCC (0.3140). Gaussian NB assumes each feature is conditionally independent and normally distributed. Both assumptions fail badly here — `BILL_AMT1`…`BILL_AMT6` are near-duplicates of one another, and the bill/payment distributions are heavily skewed. The redundant evidence is effectively counted six times, pushing predicted probabilities toward the minority class. It catches most defaulters but raises four false alarms for every six true ones, and its probability estimates should not be used for pricing decisions. |
-| Support Vector Machine | Accuracy 0.8161 — effectively level with the Decision Tree — with MCC 0.3794, third best. Uses an RBF kernel with `C=1.0`, `gamma='scale'` on standardised features, and it finds a non-linear boundary that captures the delinquency-by-bill interaction Logistic Regression misses. Its recall (0.3311) is still timid. Only **10,506 of 23,972** training points became support vectors, but predicting requires evaluating the kernel against every one of them, hence the 2.0 MB artefact and the highest inference cost of the five. |
-| **Overall, Winner for your dataset?** | **Decision Tree.** It wins on MCC (0.3912) — the most trustworthy metric under class imbalance — and on AUC (0.7341) and accuracy (0.8163), while staying competitive on F1. It additionally offers full interpretability and millisecond inference from a 3 KB artefact. If the business objective were "catch as many defaulters as possible at any cost", Naive Bayes would win on recall (0.6704) — but its MCC shows it is mostly guessing the minority class. The real conclusion is that **all five models sit only ~3 points above the 0.779 majority-class baseline on accuracy**, so the choice between them should be driven by MCC and the precision/recall trade-off, not accuracy. |
+| Logistic Regression | Highest precision (**0.7285**) but the lowest recall of the four linear-family models (0.2489) — it flags a default only when very confident, so it misses three out of every four actual defaulters. Because it minimises log-loss under a 78/22 imbalance, Newton's method pushes the weights toward the majority class: the intercept settles at −1.469, close to the log-odds of the base rate. Good AUC (0.7160) relative to that poor recall shows its *ranking* is reasonable even though the 0.5 threshold is far too conservative. It also cannot express the interaction effects that matter here — a high bill coupled with a rising delinquency count is far riskier than either alone. |
+| Decision Tree | Best on accuracy (**0.8195**), AUC (**0.7472**) and MCC (**0.4007**) — the only model to lead on all three. Tuning chose `max_depth=6` over depth 4 on validation F1 (0.4609 vs 0.4605 — a tie in practice) and over an unrestricted tree (0.4323), confirming that unbounded depth memorises noise. The fitted tree has 44 leaves, and one variable dominates: `PAY_0` (most recent repayment status) accounts for **66.7%** of impurity reduction, with `PAY_2` adding 13.8%. Fully interpretable: any path can be shown to a loan officer and defended. |
+| KNN | Competitive AUC (0.7333) but the weakest operational profile. The saved model stores all 23,972 training points (4.6 MB) and must compare every new client against each of them, so latency grows linearly with the dataset. With 23 features it also suffers from the curse of dimensionality — distances concentrate and neighbours stop being meaningfully "similar". `k=15` with distance weighting won the validation sweep (F1 0.4365 vs 0.4218 at k=25 and 0.3940 at k=75); larger neighbourhoods increasingly blurred the minority class until it disappeared. |
+| Naive Bayes | The mirror image of Logistic Regression: highest recall (0.6704) and highest F1 (0.4902) but lowest accuracy (0.6915), precision (0.3864) and MCC (0.3140). Gaussian NB assumes each feature is conditionally independent and normally distributed. Both assumptions fail badly here — `BILL_AMT1`…`BILL_AMT6` are near-duplicates, and the bill/payment distributions are heavily skewed. The redundant evidence is effectively counted six times, pushing predicted probabilities toward the minority class. It catches two-thirds of defaulters but raises four false alarms for every six true ones. |
+| Support Vector Machine | Accuracy 0.8133 with MCC 0.3755 — second best on MCC, but it pays for that in AUC (0.7105, lowest of the five). It uses an RBF kernel with `C=1.0` and `gamma='scale'` on standardised features, and finds a genuinely non-linear boundary that captures the delinquency-by-bill interaction Logistic Regression misses. **1,877 of the 4,000 subsampled training points became support vectors** — the data is noisy enough that almost half the points sit on or inside the margin. The precomputed kernel matrix is why training uses a stratified 4,000-row subsample instead of all 23,972 rows; `validate_models.py` confirms the SMO implementation reproduces scikit-learn exactly on that same subsample. Probabilities are a monotone sigmoid of the decision value, so the *ranking* (and therefore AUC) is exact but the probabilities are not calibrated. |
+| **Overall, Winner for your dataset?** | **Decision Tree.** It wins on MCC (0.4007) — the most trustworthy metric under class imbalance — and on AUC (0.7472) and accuracy (0.8195), while staying competitive on F1. It additionally offers full interpretability and microsecond inference from a 5 KB artefact. If the business objective were "catch as many defaulters as possible at any cost", Naive Bayes would win on recall (0.6704) — but its MCC shows it is mostly guessing the minority class. The real conclusion is that **four of the five sit only 2.8–4.1 points above the 0.7787 majority-class baseline on accuracy, and Naive Bayes sits 8.7 points below it** — so the choice between them should be driven by MCC and the precision/recall trade-off, not accuracy. |
 
 ---
 
@@ -99,9 +120,18 @@ All five models were trained on the same 23 features and evaluated on the same 5
 ├── app.py                  # Streamlit application
 ├── prepare_data.py         # Raw .xls -> cleaned CSV
 ├── train_models.py         # Trains, evaluates and saves all five models
+├── validate_models.py      # Checks each from-scratch model against scikit-learn
+├── analysis.py             # Bootstrap intervals, threshold sweep, importances
 ├── requirements.txt
 ├── README.md
 ├── test_data.csv           # 5,993 held-out rows (features + target)
+├── models/                 # Hand-written implementations
+│   ├── base.py             # Model ABC: fit / predict_proba / predict / save / load
+│   ├── logistic.py         # LogisticRegressionModel — Newton (IRLS)
+│   ├── tree.py             # DecisionTreeModel — CART, Gini
+│   ├── knn.py              # KNNModel — distance-weighted voting
+│   ├── naive_bayes.py      # GaussianNBModel — Gaussian likelihoods
+│   └── svm.py              # SVMModel — RBF kernel + SMO
 ├── data/
 │   ├── raw/                # Original UCI .xls download
 │   └── credit_default.csv  # Cleaned dataset (29,965 rows)
@@ -115,7 +145,10 @@ All five models were trained on the same 23 features and evaluated on the same 5
 │   └── metadata.json        # Feature order, target name, positive class
 └── reports/
     ├── metrics.json         # Metric values for all five models
-    └── details.json         # Confusion matrices and classification reports
+    ├── details.json         # Confusion matrices and classification reports
+    ├── analysis.json        # Bootstrap intervals, threshold sweep, importances
+    ├── validation.json      # From-scratch vs scikit-learn comparison
+    └── training_config.json # Chosen hyperparameters and split sizes
 ```
 
 ## Study notes
@@ -129,9 +162,10 @@ this repository's code.
 | [`docs/01_theory.md`](docs/01_theory.md) | How each of the five algorithms works, with the maths |
 | [`docs/02_metrics.md`](docs/02_metrics.md) | All six metrics, with worked arithmetic from our confusion matrices |
 | [`docs/03_data_pipeline.md`](docs/03_data_pipeline.md) | Raw `.xls` → cleaned CSV → scaled matrices, and the leakage traps |
-| [`docs/04_code_walkthrough.md`](docs/04_code_walkthrough.md) | Line-by-line tour of all three scripts |
+| [`docs/04_code_walkthrough.md`](docs/04_code_walkthrough.md) | Line-by-line tour of every script, including the `models/` package |
 | [`docs/05_why_these_results.md`](docs/05_why_these_results.md) | Mechanism behind every reported number, plus bootstrap intervals |
-| [`docs/06_viva_prep.md`](docs/06_viva_prep.md) | 40 defence questions with answers |
+| [`docs/06_viva_prep.md`](docs/06_viva_prep.md) | 41 defence questions with answers |
+| [`docs/07_implementations.md`](docs/07_implementations.md) | The five algorithms from scratch: the maths in each file, the bugs to avoid, and the proof they match scikit-learn |
 
 ## Running locally
 
@@ -146,6 +180,8 @@ To regenerate the artefacts from scratch:
 ```bash
 python prepare_data.py     # writes data/credit_default.csv
 python train_models.py     # writes model/*.joblib, reports/*, test_data.csv
+python validate_models.py  # from-scratch vs scikit-learn, writes reports/validation.json
+python analysis.py         # bootstrap intervals + threshold sweep
 ```
 
 ## Streamlit application

@@ -69,15 +69,15 @@ You can watch this trade-off in our tuning output:
 
 | `max_depth` | Validation F1 |
 |---|---|
-| 4 | **0.4628** ← chosen |
-| 6 | 0.4517 |
-| 8 | 0.4449 |
-| 10 | 0.4377 |
-| unlimited (`None`) | 0.4290 |
+| 4 | 0.4605 |
+| 6 | **0.4609** ← chosen |
+| 8 | 0.4432 |
+| 10 | 0.4323 |
+| unlimited (`None`) | 0.4323 |
 
-Accuracy gets *worse* as the tree gets deeper. The unlimited tree can perfectly
+Accuracy gets *worse* once the tree goes past depth 6. The unlimited tree can perfectly
 memorise the training data — its training accuracy is 1.000 — yet it generalises worse
-than a tree with 15 leaves. Each extra split is fitting quirks of those specific 19,177
+than a 44-leaf tree. Each extra split is fitting quirks of those specific 19,177
 people that don't describe the other 5,993.
 
 This table is the single most persuasive piece of evidence you can bring to a viva that
@@ -108,8 +108,11 @@ Minimise the binary cross-entropy (log loss):
 $$L(w,b) = -\frac{1}{N}\sum_i \Big[y_i \log p_i + (1-y_i)\log(1-p_i)\Big]$$
 
 This is the negative log-likelihood of the data under the model. There is no closed
-form, so scikit-learn uses **L-BFGS**, a quasi-Newton optimiser. We set
-`max_iter=2000`; it converged in **32 iterations**.
+form, so it is solved iteratively. Our implementation (`models/logistic.py`) uses
+**Newton's method** — IRLS — which needs the 24×24 Hessian but converges in **7
+iterations**; scikit-learn's reference version uses **L-BFGS**, a quasi-Newton
+optimiser that avoids forming the Hessian and scales to many more features. On this
+problem both reach the same optimum (`validate_models.py`: AUC gap 0.0000).
 
 ### Reading our actual coefficients
 
@@ -117,20 +120,20 @@ Standardised features mean one unit = one standard deviation.
 
 | Feature | Coefficient | Odds multiplier ($e^{w}$) |
 |---|---|---|
-| `PAY_0` | **+0.6535** | **×1.92** |
-| `BILL_AMT1` | −0.4580 | ×0.63 |
-| `BILL_AMT2` | +0.2730 | ×1.31 |
-| `PAY_AMT1` | −0.2557 | ×0.77 |
-| `PAY_AMT2` | −0.1991 | ×0.82 |
-| `LIMIT_BAL` | −0.1053 | ×0.90 |
+| `PAY_0` | **+0.6492** | **×1.91** |
+| `BILL_AMT1` | −0.4605 | ×0.63 |
+| `BILL_AMT2` | +0.2832 | ×1.33 |
+| `PAY_AMT1` | −0.2584 | ×0.77 |
+| `PAY_AMT2` | −0.1915 | ×0.83 |
+| `LIMIT_BAL` | −0.1052 | ×0.90 |
 
-Read `PAY_0 = +0.6535` as: *holding everything else fixed, one standard deviation more
-delinquency in the most recent month multiplies the odds of default by 1.92.* That is
+Read `PAY_0 = +0.6492` as: *holding everything else fixed, one standard deviation more
+delinquency in the most recent month multiplies the odds of default by 1.91.* That is
 by far the strongest single signal — which is precisely why the decision tree split on
 it first.
 
-The intercept is **−1.4676**, so a client at exactly the mean on every feature has
-log-odds −1.4676, i.e. probability $\sigma(-1.4676) = 0.187$ — close to the 22.1% base
+The intercept is **−1.4687**, so a client at exactly the mean on every feature has
+log-odds −1.4687, i.e. probability $\sigma(-1.4687) = 0.187$ — close to the 22.1% base
 rate, as it should be.
 
 ### Why its recall is only 0.25
@@ -195,24 +198,24 @@ best tree.
 
 ### Feature importance, from our actual tree
 
-scikit-learn's `feature_importances_` is the normalised total impurity decrease
+`DecisionTreeModel.feature_importances_` is the normalised total impurity decrease
 attributable to each feature:
 
 | Feature | Importance |
 |---|---|
-| `PAY_0` | **0.7347** |
-| `PAY_2` | 0.1440 |
-| `PAY_AMT3` | 0.0477 |
-| `BILL_AMT1` | 0.0276 |
-| `PAY_5` | 0.0232 |
-| `LIMIT_BAL` | 0.0081 |
+| `PAY_0` | **0.6665** |
+| `PAY_2` | 0.1383 |
+| `PAY_AMT3` | 0.0536 |
+| `PAY_3` | 0.0373 |
+| `LIMIT_BAL` | 0.0296 |
+| `BILL_AMT1` | 0.0185 |
 
-**73% of the model's entire decision-making is one column.** The rest is refinement.
+**Two-thirds of the model's entire decision-making is one column.** The rest is refinement.
 If you had to build a one-question credit screen, it would be "how late was your last
 payment?" — and the tree quantifies exactly how much that's worth.
 
-Our settings: `max_depth=4`, `min_samples_leaf=50`. The leaf-size floor prevents splits
-that isolate 3 people, which is where memorisation starts.
+Our settings: `max_depth=6`, `min_samples_leaf=50`, which produces 44 leaves. The
+leaf-size floor prevents splits that isolate 3 people, which is where memorisation starts.
 
 ### Strengths and weaknesses
 
@@ -250,9 +253,9 @@ contribute comparably.
 
 | `k` | Validation F1 |
 |---|---|
-| 15 | **0.4375** |
+| 15 | **0.4365** |
 | 25 | 0.4218 |
-| 45 | 0.4179 |
+| 45 | 0.4163 |
 | 75 | 0.3940 |
 
 Smaller `k` = more local = more variance. Larger `k` = smoother = blurs the minority
@@ -367,11 +370,12 @@ $$\hat{y} = \operatorname{sign}\!\left(\sum_i \alpha_i y_i K(x_i, x) + b\right)$
 
 Only points with $\alpha_i > 0$ — the **support vectors** — contribute. From our fit:
 
-> **10,506 of 23,972** training points became support vectors (44%).
+> **1,877 of the 4,000** subsampled training points became support vectors (47%).
 
 That's a high proportion, which is typical of an overlapping, noisy boundary like credit
-default. It also explains the 2.0 MB artifact: every prediction evaluates the kernel
-against 10,506 points. It is the most expensive model to serve.
+default. It also explains why the artifact is 351 KB — modest, because the training set
+itself is capped at 4,000 rows — while prediction still evaluates the kernel against
+1,877 points for every client. It is the most expensive model to serve.
 
 ### Why scaling is mandatory
 

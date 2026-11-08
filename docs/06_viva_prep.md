@@ -1,6 +1,6 @@
 # 6. Viva / Defence Preparation
 
-Thirty questions an examiner could reasonably ask, with answers grounded in the actual
+Forty-one questions an examiner could reasonably ask, with answers grounded in the actual
 numbers from this project.
 
 ---
@@ -59,8 +59,8 @@ to model quality.
 **9. What is data leakage and where could it have occurred here?**
 Leakage is when information from the test set influences training, making the score
 optimistic. Three places it could have happened:
-- Fitting the `StandardScaler` on all rows before splitting → we fit on the fit-split only
-  (19,177 rows), then `transform` everywhere.
+- Fitting the `StandardScaler` on all rows before splitting → we fit on the 23,972 training
+  rows only, then `transform` the test set.
 - Duplicates spanning train and test → removed before splitting.
 - Tuning on the test set → we tune on a validation slice carved out of training only.
 
@@ -68,7 +68,8 @@ optimistic. Three places it could have happened:
 The inner split (19,177 fit / 4,795 validation) exists to choose the tree depth and KNN
 `k`. Comparing candidates on the test set would be tuning on the answer key. After
 selection, the winner is **refit on all 23,972 training rows** so the validation rows
-aren't wasted.
+aren't wasted. The scaler is fitted once on all 23,972 training rows, so the validation
+slice is transformed exactly as the test set is.
 
 **11. Why must the scaler be saved rather than recomputed in the app?**
 `StandardScaler` stores a mean and standard deviation per feature. At inference, uploaded
@@ -113,14 +114,19 @@ $\log\frac{p}{1-p} = w \cdot x + b$, so the decision boundary is a hyperplane an
 coefficient is an odds multiplier.
 
 **17. Interpret your largest coefficient.**
-`PAY_0` = +0.6535. Since features are standardised, one SD more delinquency in the most
-recent month multiplies the odds of default by $e^{0.6535} = 1.92$, holding all else fixed.
-The intercept −1.4676 gives a base probability of 0.187, close to the 22.1% base rate.
+`PAY_0` = +0.6492. Since features are standardised, one SD more delinquency in the most
+recent month multiplies the odds of default by $e^{0.6492} = 1.91$, holding all else fixed.
+The intercept −1.4687 gives a base probability of 0.187, close to the 22.1% base rate. The
+fit is Newton's method on the L2-penalised log loss and it converges in **7 iterations**.
 
 **18. How does a Decision Tree choose splits?**
-Greedily: at each node, try every feature and threshold and pick the split that most
-reduces **Gini impurity**, $1 - \sum p_k^2$, weighted by child size. Then recurse. It is
-greedy and has no lookahead, so the tree is not globally optimal.
+Greedily: at each node, try each feature and a set of candidate thresholds and pick the
+split that most reduces **Gini impurity**, $1 - \sum p_k^2$, weighted by child size. Then
+recurse. It is greedy and has no lookahead, so the tree is not globally optimal. Our
+implementation (`models/tree.py`) uses up to 32 quantile thresholds per feature rather
+than every midpoint between adjacent sorted values — with 24,000 rows the exhaustive search
+evaluates millions of candidates per node. `validate_models.py` measures the cost of that
+approximation: 0.0035 AUC against scikit-learn's exact search.
 
 **19. How does KNN predict?**
 `fit` just stores the data. Prediction finds the 15 nearest training points by Euclidean
@@ -138,7 +144,7 @@ nearly the same thing.
 
 **22. What does that violation do to your results, concretely?**
 It multiplies the same evidence six times, inflating the posterior for class 1. Consequence:
-highest recall (0.6704) but **1,412 false positives** versus 265 for the tree, precision
+highest recall (0.6704) but **1,412 false positives** versus 246 for the tree, precision
 0.3864, and accuracy 0.6915 — **worse than the 0.7787 "predict nobody defaults" baseline**.
 
 **23. What is the kernel trick?**
@@ -149,18 +155,23 @@ linear separator exist there without ever computing the mapping.
 
 **24. What are support vectors, and how many did you get?**
 The training points with $\alpha_i > 0$ — those on or violating the margin. Only they
-contribute to predictions. We got **10,506 of 23,972 (44%)**, which is high, and is a direct
-measure of how much the classes overlap.
+contribute to predictions. We got **1,877 of 4,000 sampled points (47%)**, which is high,
+and is a direct measure of how much the classes overlap. Note the 4,000: the precomputed
+kernel matrix is quadratic in memory, so the SVM trains on a stratified subsample of the
+23,972 rows rather than all of them — the one place in this project where a model sees less
+data than the others.
 
 **25. What does `C` control?**
 The penalty for margin violations. Small `C` = wide margin, more violations tolerated (more
 regularisation). Large `C` = narrow margin, tighter fit (overfitting risk). We used the
 default 1.0.
 
-**26. Why did you use `decision_function` for SVM's AUC?**
-`SVC(probability=False)` has no `predict_proba`. AUC only needs a risk *ranking*, and the
-signed distance to the boundary is a valid ranking, so `decision_function` gives identical
-AUC without the slow internal Platt-scaling step.
+**26. How does your SVM produce an AUC if it has no calibrated probabilities?**
+`predict_proba` returns `sigmoid(decision_value)`. That is a strictly monotone transform of
+the signed distance to the boundary, and AUC depends only on the *ranking* of scores — so
+the AUC is exact even though the probabilities are not calibrated. Calling
+`decision_function` directly gives the identical AUC; the sigmoid is there only so the SVM
+satisfies the same `Model` interface as the other four.
 
 ---
 
@@ -175,61 +186,68 @@ Predicting "no default" for everyone scores **0.7787**. Four of five models reac
 MCC uses all four confusion cells:
 $(TP\cdot TN - FP\cdot FN)/\sqrt{(TP+FP)(TP+FN)(TN+FP)(TN+FN)}$. F1 ignores $TN$ entirely —
 and in a 78/22 problem $TN$ is almost the whole dataset. Naive Bayes beats the tree on F1
-(0.4902 vs 0.4709) yet loses on MCC (0.3140 vs 0.3912) because of its 1,412 false
+(0.4902 vs 0.4753) yet loses on MCC (0.3140 vs 0.4007) because of its 1,412 false
 positives. **F1 alone would have picked the wrong model.**
 
-**29. What does AUC 0.7341 mean in plain English?**
+**29. What does AUC 0.7472 mean in plain English?**
 Pick a random defaulter and a random non-defaulter. The model ranks the defaulter as
-riskier 73.4% of the time. A coin flip gives 50%.
+riskier 74.7% of the time. A coin flip gives 50%.
 
-**30. Your tree's MCC is 0.39. Is that good?**
+**30. Your tree's MCC is 0.40. Is that good?**
 Moderate, and appropriate. Published models on this dataset report AUC roughly 0.70–0.78,
-so 0.73 is in line. An MCC of 0.9 here would be *suspicious* — it would suggest leakage.
-MCC is domain-relative; 0.39 on a noisy behavioural dataset is a real signal.
+so 0.75 is in line. An MCC of 0.9 here would be *suspicious* — it would suggest leakage.
+MCC is domain-relative; 0.40 on a noisy behavioural dataset is a real signal.
 
 ---
 
 ## Results, honesty, and improvement
 
 **31. Which model wins, and how confident are you?**
-The Decision Tree has the best point estimate on accuracy (0.8163), AUC (0.7341) and MCC
-(0.3912). But bootstrap 95% intervals overlap for all five on AUC, and overlap for tree vs
-SVM/KNN on MCC. **The only statistically defensible claim is that the tree clearly beats
-Naive Bayes on MCC** (0.360–0.418 vs 0.287–0.338). The tree is chosen for interpretability
-and a 3 KB artifact, not a proven accuracy lead.
+The Decision Tree has the best point estimate on accuracy (0.8195), AUC (0.7472) and MCC
+(0.4007). Bootstrap 95% intervals overlap for tree vs KNN and tree vs Naive Bayes on AUC,
+and for tree vs SVM/KNN/Logistic Regression on MCC. **Two claims do survive:** the tree
+beats Naive Bayes on MCC (0.364–0.428 vs 0.288–0.338), and it beats the SVM on AUC
+(0.733–0.763 vs 0.695–0.727). The tree is chosen for those measurable edges plus
+interpretability and a 5 KB artifact.
 
-**32. Why do four models cluster within 0.9 points of accuracy?**
+**32. Why do four models cluster within 1.3 points of accuracy?**
 Because ~78% of predictions are "no default" and correct for free, and the signal is
 concentrated in `PAY_0` — every algorithm finds the same dominant feature and differs only
-in refinement. This is exactly why six metrics were requested.
+in refinement. SVM and Logistic Regression land on *identical* accuracy (0.8133), which is
+the clearest demonstration that accuracy cannot separate these models. This is exactly why
+six metrics were requested.
 
 **33. Your recall is only 0.37. Is the model useful?**
 Not as-is for production. Missing 63% of defaulters is operationally unacceptable. But the
-project *measures* that rather than hiding it, and §2.8 of `02_metrics.md` shows a free
-improvement: at threshold 0.40, MCC rises to 0.3974 and F1 to 0.4915 with no retraining.
+project *measures* that rather than hiding it, and §2.8 of `02_metrics.md` shows the
+trade-off: at threshold 0.25, recall rises to 0.5905 and F1 to 0.5136, but precision falls
+to 0.4544 and MCC to 0.3568. There is no free improvement — only a cost you choose.
 
 **34. How would you improve it?**
-In value order: (1) tune the operating threshold from a cost matrix; (2)
-`class_weight="balanced"`; (3) tune SVM `C`/`gamma` (currently defaults); (4) engineer
-features — utilisation ratio `BILL_AMT1/LIMIT_BAL`, average lateness, repayment fraction;
-(5) one-hot encode `PAY_*` as ordered categories; (6) gradient boosting, which typically
-reaches AUC ≈ 0.78 on this dataset.
+In value order: (1) tune the operating threshold from a cost matrix; (2) add class weights
+to the loss in LR, SVM and the tree; (3) tune SVM `C`/`gamma` (currently defaults, and
+trained on a subsample); (4) engineer features — utilisation ratio
+`BILL_AMT1/LIMIT_BAL`, average lateness, repayment fraction; (5) one-hot encode `PAY_*` as
+ordered categories; (6) gradient boosting, which typically reaches AUC ≈ 0.78 on this
+dataset.
 
 **35. What is overfitting, and where did you observe it?**
 Letting a model learn noise that won't recur. Observable in the tuning output: validation
-F1 **fell** as tree depth increased (0.4628 at depth 4 → 0.4290 unlimited), even though
-training accuracy rose to 1.000. More capacity made it worse — that measured decline is the
-evidence.
+F1 **fell** as tree depth increased — 0.4605 at depth 4, 0.4609 at depth 6, then 0.4432 at
+depth 8 and 0.4323 unrestricted — even though the training-set fit kept improving. More
+capacity made held-out performance worse, and that measured decline is the evidence. The
+44-leaf tree at depth 6 is where the two curves were still closest.
 
 **36. Why does `drop_duplicates()` come before the split and not after?**
 If it runs after splitting, duplicates could already be on both sides. Removing them
 beforehand guarantees a client appears in exactly one partition.
 
 **37. Your app must not retrain. How do you guarantee that?**
-`app.py` never imports an estimator class or `train_test_split`, and calls only `predict` /
-`predict_proba` / `decision_function`. It loads `model/*.joblib` and
-`model/scaler.joblib` and applies the saved transform. If `.fit(` appeared in the file, the
-requirement would be violated.
+`app.py` never imports a model class or `train_test_split`, and calls only `predict` /
+`predict_proba`. It loads `model/*.joblib` and `model/scaler.joblib` and applies the saved
+transform. If `.fit(` appeared in the file, the requirement would be violated. The pickled
+objects are instances of our own `Model` subclasses, so unpickling requires the `models/`
+package to be importable next to `app.py` — which it is, in the repository root.
 
 **38. What happens if the uploaded CSV has the columns in a different order?**
 Nothing bad — the app selects `frame[FEATURES]` by name using the order stored in
@@ -237,15 +255,44 @@ Nothing bad — the app selects `frame[FEATURES]` by name using the order stored
 rather than letting a `KeyError` surface.
 
 **39. Why is `scikit-learn` pinned to an exact version in `requirements.txt`?**
-The models are pickled `.joblib` files. Unpickling into a different scikit-learn version
-can raise `InconsistentVersionWarning` or fail outright, because internal attribute layouts
-change between releases. Deployment reproducibility requires the same version.
+The five classifiers are our own pickles, but `model/scaler.joblib` is a pickled
+`StandardScaler`, and `app.py` and `train_models.py` also rely on scikit-learn's metric
+functions. Unpickling a `StandardScaler` into a different scikit-learn version can raise
+`InconsistentVersionWarning` or fail outright, because internal attribute layouts change
+between releases. Pinning keeps the scaler and the metrics reproducible across deployment.
+It also keeps `validate_models.py` comparable: the reference models it compares against must
+be the same versions each run.
 
 **40. What was the hardest bug in this project?**
-The silently-under-trained models. The tuning helper fits candidates on the 80% fit-split;
-the first version then skipped refitting the two tuned models, so the Decision Tree and KNN
-were scored while trained on only 19,177 of 23,972 rows — 20% of the data thrown away. It
-was invisible in the printed metrics; it surfaced only by inspecting artefacts
-(`knn._fit_X.shape == (19177, 23)`, tree with 13 leaves). Fixing it raised the tree's MCC
-from 0.3858 to 0.3912 and *lowered* KNN's from 0.3611 to 0.3545, which is why you measure
-rather than assume.
+The SMO bias update in `models/svm.py`. The loop maintains a running decision value `f` for
+every training point and updates it incrementally when two multipliers change — but the
+intercept `b` also changes on every step, and the first version never added that change to
+`f`. Errors were then computed against a stale decision value, so `b` drifted upward on
+every update and reached **+114** while all predictions collapsed to a single class. It was
+invisible as an exception: the model "trained", it just scored 0.51 accuracy. The fix is one
+term — `f += ... + (new_b - b)`. The check that caught it was comparing our SVM's
+`n_support_` and intercept against scikit-learn's on the same data; they now agree exactly.
+
+An earlier build had a second, quieter bug: the tuning helper fitted candidates on the
+80% fit-split, and the main loop then scored the Decision Tree and KNN without refitting
+them on all 23,972 rows — 20% of the data silently discarded. It surfaced only by
+inspecting artefacts (`knn._fit_X.shape == (19177, 23)`), not from the printed metrics.
+
+**41. Why did you implement the five algorithms yourself instead of using scikit-learn?**
+Because the algorithms *are* the assignment. Calling `LogisticRegression().fit(X, y)` returns
+a score but demonstrates nothing about Newton's method, Gini impurity, distance-weighted
+voting, conditional independence, or the SMO dual problem. Each of the five now lives in its
+own file under `models/` (`logistic.py`, `tree.py`, `knn.py`, `naive_bayes.py`, `svm.py`),
+all subclassing the `Model` interface in `models/base.py`, so `train_models.py` and `app.py`
+never branch on which algorithm they hold.
+
+The risk of a hand-written implementation is that it is quietly wrong, so the defence is
+`validate_models.py`: it fits our model and scikit-learn's on the identical split and prints
+the difference. Naive Bayes, KNN and the SVM match to four decimal places. Logistic
+Regression differs by 0.0000 AUC (a different solver landing at the same optimum) and the
+tree by 0.0035 (quantile thresholds). That last comparison is the strongest answer available:
+not "I think it's right" but "here is the reference implementation, here is the gap, and
+here is why it exists."
+
+scikit-learn remains in the project for `train_test_split`, `StandardScaler` and the metric
+functions — the parts that are plumbing rather than modelling.
