@@ -153,7 +153,6 @@ SVM on AUC, and it beats Naive Bayes on MCC. All five intervals are in
 ├── validate_models.py      # Checks each from-scratch model against scikit-learn
 ├── analysis.py             # Bootstrap intervals, threshold sweep, importances
 ├── requirements.txt
-├── runtime.txt
 ├── README.md
 ├── test_data.csv           # 5,993 held-out rows (features + target)
 ├── models/                 # Hand-written implementations
@@ -207,8 +206,11 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The pinned requirements are the versions used to train the saved models. To rebuild
-everything from the raw data:
+`requirements.txt` uses minimum versions rather than exact pins, so the install works on
+any Python 3.9 or later. The saved models were trained with scikit-learn 1.6.1 and load
+under newer releases.
+
+To rebuild everything from the raw data:
 
 ```bash
 python prepare_data.py     # writes data/credit_default.csv

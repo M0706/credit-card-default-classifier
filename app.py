@@ -12,6 +12,7 @@ import joblib
 import matplotlib
 import pandas as pd
 import streamlit as st
+from sklearn.exceptions import InconsistentVersionWarning
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -29,6 +30,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 # macOS OpenBLAS raises spurious divide-by-zero warnings on matmul for denormal
 # inputs; outputs are verified finite, so silence just this class of warning.
 warnings.filterwarnings("ignore", message=".*encountered in matmul.*", category=RuntimeWarning)
+# The scaler artefact was pickled by scikit-learn 1.6.1. Newer releases load it
+# correctly and return identical predictions, but log a version warning each time.
+warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "model"
