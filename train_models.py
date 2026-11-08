@@ -8,6 +8,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from sklearn.base import clone
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -105,8 +106,11 @@ def main():
 
     results, reports = {}, {}
     for name, model in models.items():
-        if name not in ("decision_tree", "knn"):
-            model.fit(X_train_s, y_train)
+        # Tuned models were fitted on the tuning split; refit the chosen
+        # configuration on the full training set before scoring it.
+        if name in ("decision_tree", "knn"):
+            model = clone(model)
+        model.fit(X_train_s, y_train)
         metrics = evaluate(model, X_test_s, y_test)
         results[name] = metrics
         preds = model.predict(X_test_s)
