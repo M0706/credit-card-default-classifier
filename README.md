@@ -221,7 +221,7 @@ python analysis.py         # bootstrap intervals and threshold sweep
 
 ## Streamlit application
 
-**Live app:** https://credit-card-classifier.streamlit.app/
+**Live app:** https://credit-card-default-classifier-mmprsazbjqvdz37jd9hbyo.streamlit.app/
 
 The app has four parts:
 
