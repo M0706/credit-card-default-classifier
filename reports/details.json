@@ -1,0 +1,67 @@
+{
+  "logistic_regression": {
+    "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8203    0.9734    0.8903      4667\n           1     0.7275    0.2496    0.3717      1326\n\n    accuracy                         0.8133      5993\n   macro avg     0.7739    0.6115    0.6310      5993\nweighted avg     0.7998    0.8133    0.7756      5993\n",
+    "confusion_matrix": [
+      [
+        4543,
+        124
+      ],
+      [
+        995,
+        331
+      ]
+    ]
+  },
+  "decision_tree": {
+    "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8383    0.9456    0.8887      4667\n           1     0.6516    0.3582    0.4623      1326\n\n    accuracy                         0.8156      5993\n   macro avg     0.7450    0.6519    0.6755      5993\nweighted avg     0.7970    0.8156    0.7944      5993\n",
+    "confusion_matrix": [
+      [
+        4413,
+        254
+      ],
+      [
+        851,
+        475
+      ]
+    ]
+  },
+  "knn": {
+    "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8334    0.9445    0.8855      4667\n           1     0.6321    0.3356    0.4384      1326\n\n    accuracy                         0.8098      5993\n   macro avg     0.7328    0.6400    0.6620      5993\nweighted avg     0.7889    0.8098    0.7866      5993\n",
+    "confusion_matrix": [
+      [
+        4408,
+        259
+      ],
+      [
+        881,
+        445
+      ]
+    ]
+  },
+  "naive_bayes": {
+    "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8816    0.6975    0.7788      4667\n           1     0.3864    0.6704    0.4902      1326\n\n    accuracy                         0.6915      5993\n   macro avg     0.6340    0.6839    0.6345      5993\nweighted avg     0.7721    0.6915    0.7149      5993\n",
+    "confusion_matrix": [
+      [
+        3255,
+        1412
+      ],
+      [
+        437,
+        889
+      ]
+    ]
+  },
+  "svm": {
+    "classification_report": "              precision    recall  f1-score   support\n\n           0     0.8339    0.9539    0.8899      4667\n           1     0.6713    0.3311    0.4434      1326\n\n    accuracy                         0.8161      5993\n   macro avg     0.7526    0.6425    0.6667      5993\nweighted avg     0.7979    0.8161    0.7911      5993\n",
+    "confusion_matrix": [
+      [
+        4452,
+        215
+      ],
+      [
+        887,
+        439
+      ]
+    ]
+  }
+}
