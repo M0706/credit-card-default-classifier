@@ -59,9 +59,7 @@ Originally published by Yeh & Lien (2009). Data from 30,000 clients of a Taiwane
 
 ## c. GitHub repository link
 
-`https://github.com/<your-username>/credit-card-default-classifier`
-
-<!-- TODO: replace <your-username> after creating the repository -->
+`https://github.com/M0706/credit-card-default-classifier`
 
 ---
 
